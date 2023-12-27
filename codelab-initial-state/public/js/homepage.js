@@ -19,14 +19,20 @@ import {
   HeaderIcon,
   HeaderBar,
   ModalDialog,
-  CartList
-} from "./view.js";
+  CartList,
+} from './view.js';
 
 export async function onDocumentReady(firebaseApp) {
-  console.log("Firebase Config", JSON.stringify(firebaseApp.options));
+  console.log('Firebase Config', JSON.stringify(firebaseApp.options));
 
   const auth = firebaseApp.auth();
   const db = firebaseApp.firestore();
+
+  if (location.hostname === '127.0.0.1') {
+    console.log('127.0.0.1 detected!');
+    auth.useEmulator('http://127.0.0.1:9099');
+    db.useEmulator('127.0.0.1', 8080);
+  }
 
   const homePage = new HomePage(db, auth);
   mount(document.body, homePage);
@@ -48,12 +54,12 @@ class HomePage {
     this.auth = auth;
 
     this.headerBar = new HeaderBar([
-      new HeaderIcon("sign_in", "account_circle", "Sign In", () => {
+      new HeaderIcon('sign_in', 'account_circle', 'Sign In', () => {
         this.onSignInClicked();
       }),
-      new HeaderIcon("cart", "shopping_cart", "N/A", () => {
+      new HeaderIcon('cart', 'shopping_cart', 'N/A', () => {
         this.showCart();
-      })
+      }),
     ]);
 
     this.itemCardList = new ItemCardList(async (id, data) => {
@@ -61,16 +67,16 @@ class HomePage {
         await this.addToCart(id, data);
       } catch (e) {
         console.warn(e);
-        this.showError("Error adding item to cart");
+        this.showError('Error adding item to cart');
       }
     });
 
-    this.modalDialog = new ModalDialog("Cart", "Nothing here.");
+    this.modalDialog = new ModalDialog('Cart', 'Nothing here.');
 
-    this.el = el("div.header-page", [
+    this.el = el('div.header-page', [
       this.headerBar,
       this.itemCardList,
-      this.modalDialog
+      this.modalDialog,
     ]);
 
     this.listenForAuth();
@@ -78,7 +84,7 @@ class HomePage {
   }
 
   listenForAuth() {
-    this.auth.onAuthStateChanged(user => {
+    this.auth.onAuthStateChanged((user) => {
       console.log(`auth.currentUser = ${JSON.stringify(user)}`);
       const signedIn = user !== null;
       this.setSignedIn(signedIn);
@@ -86,9 +92,11 @@ class HomePage {
   }
 
   listenForItems() {
-    this.db.collection("items").onSnapshot(items => {
+    this.db.collection('items').onSnapshot((items) => {
       if (items.size === 0) {
-        console.warn("No items in the database ... did you remember to start the emulators with --import?");
+        console.warn(
+          'No items in the database ... did you remember to start the emulators with --import?'
+        );
       }
 
       this.itemCardList.setItems(items);
@@ -106,26 +114,26 @@ class HomePage {
     }
 
     // If needed, create the base cart object
-    const cartRef = this.db.collection("carts").doc(uid);
+    const cartRef = this.db.collection('carts').doc(uid);
     await cartRef.set(
       {
-        ownerUID: uid
+        ownerUID: uid,
       },
       { merge: true }
     );
 
     // Listen for updates to the cart
     // TODO: Unsub from this as well
-    this.cartUnsub = cartRef.onSnapshot(cart => {
-      console.log("cart", cart.data());
+    this.cartUnsub = cartRef.onSnapshot((cart) => {
+      console.log('cart', cart.data());
 
       const total = cart.data().totalPrice || 0;
       const count = cart.data().itemCount || 0;
-      this.headerBar.setIconText("cart", `\$${total.toFixed(2)} (${count})`);
+      this.headerBar.setIconText('cart', `\$${total.toFixed(2)} (${count})`);
     });
 
     // Listen for updates to cart items
-    this.cartItemsUnsub = cartRef.collection("items").onSnapshot(items => {
+    this.cartItemsUnsub = cartRef.collection('items').onSnapshot((items) => {
       this.setCartItems(items);
     });
   }
@@ -140,13 +148,13 @@ class HomePage {
 
   setSignedIn(signedIn) {
     if (signedIn) {
-      this.headerBar.setIconText("sign_in", "Sign Out");
-      this.headerBar.setIconEnabled("cart", true);
+      this.headerBar.setIconText('sign_in', 'Sign Out');
+      this.headerBar.setIconEnabled('cart', true);
       this.listenForCart(this.auth.currentUser.uid);
     } else {
-      this.headerBar.setIconText("sign_in", "Sign In");
-      this.headerBar.setIconText("cart", "N/A");
-      this.headerBar.setIconEnabled("cart", false);
+      this.headerBar.setIconText('sign_in', 'Sign In');
+      this.headerBar.setIconText('cart', 'N/A');
+      this.headerBar.setIconEnabled('cart', false);
       this.setCartItems(null);
     }
   }
@@ -155,26 +163,30 @@ class HomePage {
     let itemIds;
 
     if (items) {
-      this.cartItems = items.docs.map(doc => doc.data());
-      itemIds = items.docs.map(doc => doc.id);
+      this.cartItems = items.docs.map((doc) => doc.data());
+      itemIds = items.docs.map((doc) => doc.id);
     } else {
       this.cartItems = [];
       itemIds = [];
     }
 
     // For any item in the cart, we disable the add button
-    this.itemCardList.getAll().forEach(itemCard => {
+    this.itemCardList.getAll().forEach((itemCard) => {
       const inCart = itemIds.indexOf(itemCard.id) >= 0;
       itemCard.setAddEnabled(!inCart);
     });
   }
 
   addToCart(id, itemData) {
-    console.log("addToCart", id, JSON.stringify(itemData));
+    if (this.auth.currentUser === null) {
+      this.showError('You must be signed in!');
+      return;
+    }
+    console.log('addToCart', id, JSON.stringify(itemData));
     return this.db
-      .collection("carts")
+      .collection('carts')
       .doc(this.auth.currentUser.uid)
-      .collection("items")
+      .collection('items')
       .doc(id)
       .set(itemData);
   }
@@ -184,7 +196,7 @@ class HomePage {
       return;
     }
 
-    const items = this.cartItems.map(doc => `${doc.name} - ${doc.price}`);
+    const items = this.cartItems.map((doc) => `${doc.name} - ${doc.price}`);
     this.modalDialog.setContent(new CartList(items));
     this.modalDialog.show();
   }
